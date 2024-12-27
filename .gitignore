@@ -2,5 +2,5 @@
 dist/
 **/**/*.log
 archive/
-development.env
+
 package-lock.json

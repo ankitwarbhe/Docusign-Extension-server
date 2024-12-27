@@ -108,44 +108,93 @@ app.get('/oauth2/authorize', (req, res) => {
 
 // Token endpoint
 app.post('/oauth2/token', (req, res) => {
-  const { grant_type, code, client_id, client_secret, redirect_uri } = req.body;
+  try {
+    console.log('Token endpoint accessed');
+    console.log('Request body:', req.body);
+    
+    const { grant_type, code, client_id, client_secret, redirect_uri } = req.body;
 
-  // Validate client credentials
-  if (!validateClient(client_id, client_secret)) {
-    return res.status(401).json({ error: 'invalid_client' });
-  }
-
-  if (grant_type === 'authorization_code') {
-    // Validate authorization code
-    const codeData = db.authorizationCodes.get(code);
-    if (!codeData || 
-        codeData.clientId !== client_id || 
-        Date.now() > codeData.expiresAt) {
-      return res.status(400).json({ error: 'invalid_grant' });
+    // Check for required parameters
+    if (!grant_type || !client_id || !client_secret) {
+      console.log('Missing required parameters');
+      return res.status(400).json({
+        error: 'invalid_request',
+        missing_params: {
+          grant_type: !grant_type,
+          client_id: !client_id,
+          client_secret: !client_secret,
+          code: grant_type === 'authorization_code' && !code,
+          redirect_uri: grant_type === 'authorization_code' && !redirect_uri
+        }
+      });
     }
 
-    // Generate access token
-    const accessToken = generateAccessToken(client_id, codeData.scope);
-
-    // Store token
-    db.accessTokens.set(accessToken, {
-      clientId: client_id,
-      scope: codeData.scope,
-      expiresAt: Date.now() + (config.accessTokenExpiration * 1000)
+    // Validate client credentials
+    const client = db.clients.get(client_id);
+    console.log('Client validation:', {
+      clientExists: !!client,
+      secretMatches: client?.clientSecret === client_secret
     });
 
-    // Remove used authorization code
-    db.authorizationCodes.delete(code);
+    if (!client || client.clientSecret !== client_secret) {
+      return res.status(401).json({ 
+        error: 'invalid_client',
+        message: 'Invalid client credentials'
+      });
+    }
 
-    return res.json({
-      access_token: accessToken,
-      token_type: 'Bearer',
-      expires_in: config.accessTokenExpiration,
-      scope: codeData.scope
+    if (grant_type === 'authorization_code') {
+      // Validate authorization code
+      const codeData = db.authorizationCodes.get(code);
+      console.log('Authorization code validation:', {
+        codeExists: !!codeData,
+        clientMatches: codeData?.clientId === client_id,
+        notExpired: codeData && Date.now() <= codeData.expiresAt
+      });
+
+      if (!codeData || 
+          codeData.clientId !== client_id || 
+          Date.now() > codeData.expiresAt) {
+        return res.status(400).json({ 
+          error: 'invalid_grant',
+          message: 'Invalid or expired authorization code'
+        });
+      }
+
+      // Generate access token
+      const accessToken = generateAccessToken(client_id, codeData.scope);
+      console.log('Generated access token');
+
+      // Store token
+      db.accessTokens.set(accessToken, {
+        clientId: client_id,
+        scope: codeData.scope,
+        expiresAt: Date.now() + (config.accessTokenExpiration * 1000)
+      });
+
+      // Remove used authorization code
+      db.authorizationCodes.delete(code);
+
+      return res.json({
+        access_token: accessToken,
+        token_type: 'Bearer',
+        expires_in: config.accessTokenExpiration,
+        scope: codeData.scope
+      });
+    }
+
+    return res.status(400).json({ 
+      error: 'unsupported_grant_type',
+      message: 'Only authorization_code grant type is supported'
+    });
+  } catch (error) {
+    console.error('Error in token endpoint:', error);
+    res.status(500).json({ 
+      error: 'server_error', 
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
-
-  res.status(400).json({ error: 'unsupported_grant_type' });
 });
 
 // Error handling middleware

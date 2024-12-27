@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const config = require('./config');
+const db = require('./db');
 
 function generateAuthorizationCode() {
   return crypto.randomBytes(32).toString('hex');

@@ -1,0 +1,68 @@
+{
+  "name": "File Archive App",
+  "description": {
+    "short": "App for file archive",
+    "long": "This app is designed to allow for users to archive a signed DocuSign agreement"
+  },
+   "icon": {
+    "data": "iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAACXBIWXMAACxLAAAsSwGlPZapAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAADcSURBVHgB7dwxCsMwEADBc8j/v+zUgTRJZNY2M6ULF1oOhECaAQAAAAAA7m778G0fjvS25o8hJUBMgJgAMQFi23xvX/ivK1uyDiYgJkBMgJgAMQFizzm/f8+mTr07MwExAWICxASICRC7wi7o1mdMJiAmQEyAmAAxAWICxASICRATICZATICYADEBYgLEBIgJEBMgJkBMgJgAMQFiAsQEiAkQEyAmQEyAmAAxAWICxASICRATICZATICYADEBYgLEBIitvCfsxd0fmICYADEBYgLEBAAAAAAAADjYCwxUBYWYirDwAAAAAElFTkSuQmCC",
+    "mediaType": "image/png"
+  },
+  "screenshots": [],
+  "publisher": {
+    "name": "John Doe",
+    "email": "john.doe@gmail.com",
+    "phone": "800-867-5309",
+    "website": "www.johndoe.com"
+  },
+  "termsOfServiceUrl": "www.johndoe.com/tos",
+  "privacyUrl": "www.johndoe.com/privacy",
+  "supportUrl": "www.johndoe.com/support",
+  "connections": [
+    {
+      "name": "authentication",
+      "description": "secure connection to the file archive proxy",
+      "type": "oauth2",
+      "params": {
+        "provider": "CUSTOM",
+        "scopes": [],
+        "clientId": "<CLIENT_ID>",
+        "clientSecret": "<CLIENT_SECRET>",
+        "customConfig": {
+          "tokenUrl": "<PROXY_BASE_URL>/api/oauth/token",
+          "authorizationUrl": "<PROXY_BASE_URL>/api/oauth/authorize",
+          "authorizationParams": {
+            "access_type": "offline",
+            "prompt": "consent"
+          },
+          "authorizationMethod": "header",
+          "scopeSeparator": " ",
+          "requiredScopes": []
+        }
+      }
+    }
+  ],
+  "extensions": [
+    {
+      "name": "My Archive Extension",
+      "description": "using to archive an envelope",
+      "template": "EAP.Version1.SpecifiedArchive",
+      "actionReferences": ["My Archive Action"]
+    }
+  ],
+  "actions": [
+    {
+      "name": "My Archive Action",
+      "description": "something about archiving to a proxy",
+      "template": "Document.Version1.SpecifiedArchive",
+      "connectionsReference": "authentication",
+      "params": {
+        "uri": "<PROXY_BASE_URL>/api/archive"
+      }
+    }
+  ],
+  "publicationRegions": [
+    "US"
+  ],
+  "distribution": "PUBLIC"
+}

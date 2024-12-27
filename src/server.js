@@ -5,6 +5,15 @@ const db = require('./db');
 const { generateAuthorizationCode, generateAccessToken, validateClient } = require('./utils');
 
 const app = express();
+
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log('Query params:', req.query);
+  console.log('Headers:', req.headers);
+  next();
+});
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -13,51 +22,88 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
   next();
 });
 
 // Root route for testing
 app.get('/', (req, res) => {
-  res.json({ status: 'Server is running' });
+  console.log('Root route accessed');
+  res.json({ 
+    status: 'Server is running',
+    timestamp: new Date().toISOString(),
+    routes: ['/oauth2/authorize', '/oauth2/token']
+  });
 });
 
 // Authorization endpoint with debug logging
 app.get('/oauth2/authorize', (req, res) => {
-  console.log('Received authorize request:', req.query);
-  const { client_id, redirect_uri, response_type, scope, state } = req.query;
+  try {
+    console.log('Authorize endpoint accessed');
+    console.log('Query parameters:', req.query);
+    
+    const { client_id, redirect_uri, response_type, scope, state } = req.query;
 
-  // Validate client and redirect URI
-  const client = db.clients.get(client_id);
-  console.log('Found client:', client ? 'yes' : 'no');
-  console.log('Redirect URI valid:', client && client.redirectUris.includes(redirect_uri) ? 'yes' : 'no');
-  
-  if (!client || !client.redirectUris.includes(redirect_uri)) {
-    console.log('Invalid client or redirect URI');
-    return res.status(400).json({ error: 'invalid_client' });
+    if (!client_id || !redirect_uri || !response_type) {
+      console.log('Missing required parameters');
+      return res.status(400).json({ 
+        error: 'invalid_request',
+        missing_params: {
+          client_id: !client_id,
+          redirect_uri: !redirect_uri,
+          response_type: !response_type
+        }
+      });
+    }
+
+    // Validate client and redirect URI
+    const client = db.clients.get(client_id);
+    console.log('Client lookup result:', {
+      clientFound: !!client,
+      validRedirectUri: client?.redirectUris.includes(redirect_uri)
+    });
+    
+    if (!client || !client.redirectUris.includes(redirect_uri)) {
+      console.log('Invalid client or redirect URI');
+      return res.status(400).json({ 
+        error: 'invalid_client',
+        details: {
+          client_exists: !!client,
+          valid_redirect_uri: client?.redirectUris.includes(redirect_uri)
+        }
+      });
+    }
+
+    if (response_type !== 'code') {
+      return res.status(400).json({ error: 'unsupported_response_type' });
+    }
+
+    // Generate authorization code
+    const code = generateAuthorizationCode();
+    
+    // Store the authorization code with associated data
+    db.authorizationCodes.set(code, {
+      clientId: client_id,
+      scope,
+      expiresAt: Date.now() + (config.authorizationCodeExpiration * 1000)
+    });
+
+    // Redirect back to client with code
+    const redirectUrl = new URL(redirect_uri);
+    redirectUrl.searchParams.append('code', code);
+    if (state) {
+      redirectUrl.searchParams.append('state', state);
+    }
+
+    res.redirect(redirectUrl.toString());
+  } catch (error) {
+    console.error('Error in authorize endpoint:', error);
+    res.status(500).json({ error: 'server_error', message: error.message });
   }
-
-  if (response_type !== 'code') {
-    return res.status(400).json({ error: 'unsupported_response_type' });
-  }
-
-  // Generate authorization code
-  const code = generateAuthorizationCode();
-  
-  // Store the authorization code with associated data
-  db.authorizationCodes.set(code, {
-    clientId: client_id,
-    scope,
-    expiresAt: Date.now() + (config.authorizationCodeExpiration * 1000)
-  });
-
-  // Redirect back to client with code
-  const redirectUrl = new URL(redirect_uri);
-  redirectUrl.searchParams.append('code', code);
-  if (state) {
-    redirectUrl.searchParams.append('state', state);
-  }
-
-  res.redirect(redirectUrl.toString());
 });
 
 // Token endpoint
@@ -102,9 +148,34 @@ app.post('/oauth2/token', (req, res) => {
   res.status(400).json({ error: 'unsupported_grant_type' });
 });
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ 
+    error: 'server_error', 
+    message: err.message,
+    path: req.path
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  console.log('404 - Route not found:', req.method, req.url);
+  res.status(404).json({ 
+    error: 'not_found',
+    message: 'The requested resource was not found',
+    path: req.path,
+    method: req.method
+  });
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`OAuth 2.0 server running on port ${PORT}`);
+  console.log('Available routes:');
+  console.log('- GET  /');
+  console.log('- GET  /oauth2/authorize');
+  console.log('- POST /oauth2/token');
 });
 
 module.exports = app;

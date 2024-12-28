@@ -115,15 +115,30 @@ app.post('/oauth2/token', (req, res) => {
     console.log('Request headers:', req.headers);
     console.log('Content-Type:', req.headers['content-type']);
     console.log('Request body:', req.body);
-    console.log('Raw request body:', req.rawBody);
     
-    const { grant_type, code, client_id, client_secret, redirect_uri } = req.body;
+    let client_id, client_secret;
+    
+    // Check for Basic auth
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Basic ')) {
+      console.log('Found Basic auth header');
+      const base64Credentials = authHeader.split(' ')[1];
+      const credentials = Buffer.from(base64Credentials, 'base64').toString('ascii');
+      [client_id, client_secret] = credentials.split(':');
+      console.log('Extracted client_id from Basic auth');
+    } else {
+      // Fall back to body parameters
+      client_id = req.body.client_id;
+      client_secret = req.body.client_secret;
+    }
+
+    const { grant_type, code, redirect_uri } = req.body;
 
     console.log('Parsed parameters:', {
       grant_type,
       code,
-      client_id,
-      client_secret: client_secret ? '[REDACTED]' : undefined,
+      client_id: client_id ? '[PRESENT]' : undefined,
+      client_secret: client_secret ? '[PRESENT]' : undefined,
       redirect_uri
     });
 

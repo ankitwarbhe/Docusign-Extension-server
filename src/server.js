@@ -113,7 +113,7 @@ app.get('/oauth2/authorize', (req, res) => {
 });
 
 // Token endpoint
-app.post('/oauth2/token', (req, res) => {
+app.post('/oauth2/token', async (req, res) => {
   try {
     console.log('Token endpoint accessed');
     console.log('Request headers:', req.headers);
@@ -162,13 +162,13 @@ app.post('/oauth2/token', (req, res) => {
       const refreshToken = generateRefreshToken(client_id, codeData.scope);
 
       // Store tokens with expiration
-      db.storeAccessToken(accessToken, {
+      await db.storeAccessToken(accessToken, {
         clientId: client_id,
         scope: codeData.scope,
         expiresIn: config.accessTokenExpiration
       });
 
-      db.storeRefreshToken(refreshToken, {
+      await db.storeRefreshToken(refreshToken, {
         clientId: client_id,
         scope: codeData.scope,
         expiresIn: 30 * 24 * 60 * 60 // 30 days
@@ -194,7 +194,7 @@ app.post('/oauth2/token', (req, res) => {
       }
 
       // Validate refresh token
-      const refreshTokenData = db.getRefreshToken(refresh_token);
+      const refreshTokenData = await db.getRefreshToken(refresh_token);
       if (!refreshTokenData || refreshTokenData.clientId !== client_id) {
         return res.status(400).json({
           error: 'invalid_grant',
@@ -206,7 +206,7 @@ app.post('/oauth2/token', (req, res) => {
       const accessToken = generateAccessToken(client_id, refreshTokenData.scope);
       
       // Store new access token
-      db.storeAccessToken(accessToken, {
+      await db.storeAccessToken(accessToken, {
         clientId: client_id,
         scope: refreshTokenData.scope,
         expiresIn: config.accessTokenExpiration
@@ -248,7 +248,7 @@ app.post('/api/specified-archive', async (req, res) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const tokenData = db.getAccessToken(token);
+    const tokenData = await db.getAccessToken(token);
     
     console.log('Token validation:', {
       tokenExists: !!tokenData,

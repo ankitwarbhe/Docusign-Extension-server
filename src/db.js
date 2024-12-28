@@ -1,3 +1,8 @@
+const Redis = require('ioredis');
+
+// Initialize Redis client
+const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+
 // In-memory storage for demo purposes
 // In production, use a proper database
 const db = {
@@ -19,44 +24,99 @@ const db = {
   archives: new Map(),
 
   // Token management methods
-  storeAccessToken(token, data) {
-    this.accessTokens.set(token, {
-      ...data,
-      created: Date.now()
-    });
-    return true;
-  },
-
-  getAccessToken(token) {
-    const tokenData = this.accessTokens.get(token);
-    if (!tokenData) return null;
-    
-    // Check if token is expired
-    const expiresAt = tokenData.created + (tokenData.expiresIn * 1000);
-    if (Date.now() > expiresAt) {
-      this.accessTokens.delete(token);
-      return null;
+  async storeAccessToken(token, data) {
+    try {
+      await redis.set(
+        `access_token:${token}`,
+        JSON.stringify({
+          ...data,
+          created: Date.now()
+        }),
+        'EX',
+        data.expiresIn
+      );
+      return true;
+    } catch (error) {
+      console.error('Redis store access token error:', error);
+      // Fallback to in-memory storage
+      this.accessTokens.set(token, {
+        ...data,
+        created: Date.now()
+      });
+      return true;
     }
-    
-    return tokenData;
   },
 
-  storeRefreshToken(token, data) {
-    this.refreshTokens.set(token, {
-      ...data,
-      created: Date.now()
-    });
-    return true;
+  async getAccessToken(token) {
+    try {
+      const data = await redis.get(`access_token:${token}`);
+      if (!data) return null;
+      
+      const tokenData = JSON.parse(data);
+      const expiresAt = tokenData.created + (tokenData.expiresIn * 1000);
+      
+      if (Date.now() > expiresAt) {
+        await redis.del(`access_token:${token}`);
+        return null;
+      }
+      
+      return tokenData;
+    } catch (error) {
+      console.error('Redis get access token error:', error);
+      // Fallback to in-memory storage
+      return this.accessTokens.get(token);
+    }
   },
 
-  getRefreshToken(token) {
-    return this.refreshTokens.get(token);
+  async storeRefreshToken(token, data) {
+    try {
+      await redis.set(
+        `refresh_token:${token}`,
+        JSON.stringify({
+          ...data,
+          created: Date.now()
+        }),
+        'EX',
+        data.expiresIn
+      );
+      return true;
+    } catch (error) {
+      console.error('Redis store refresh token error:', error);
+      // Fallback to in-memory storage
+      this.refreshTokens.set(token, {
+        ...data,
+        created: Date.now()
+      });
+      return true;
+    }
   },
 
-  revokeToken(token) {
-    this.accessTokens.delete(token);
-    this.refreshTokens.delete(token);
-    return true;
+  async getRefreshToken(token) {
+    try {
+      const data = await redis.get(`refresh_token:${token}`);
+      if (!data) return null;
+      return JSON.parse(data);
+    } catch (error) {
+      console.error('Redis get refresh token error:', error);
+      // Fallback to in-memory storage
+      return this.refreshTokens.get(token);
+    }
+  },
+
+  async revokeToken(token) {
+    try {
+      await Promise.all([
+        redis.del(`access_token:${token}`),
+        redis.del(`refresh_token:${token}`)
+      ]);
+      return true;
+    } catch (error) {
+      console.error('Redis revoke token error:', error);
+      // Fallback to in-memory storage
+      this.accessTokens.delete(token);
+      this.refreshTokens.delete(token);
+      return true;
+    }
   }
 };
 

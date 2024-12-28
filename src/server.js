@@ -242,48 +242,12 @@ app.post('/api/verifyEmail', async (req, res) => {
     console.log('Email verification endpoint accessed');
     console.log('Request body:', req.body);
     console.log('Request headers:', req.headers);
-    
-    const { emailVerification: config } = require('./config').emailVerification;
 
-    // Special handling for test requests
+    // For test requests, always return success
     if (req.headers['x-docusign-test'] || req.query.test) {
       return res.status(200).json({
+        success: true,
         message: "Test successful"
-      });
-    }
-    
-    // Verify Bearer token
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        error: 'Unauthorized',
-        message: config.messages.missingToken,
-        path: req.path
-      });
-    }
-
-    const token = authHeader.split(' ')[1];
-    const tokenData = await db.getAccessToken(token);
-    
-    console.log('Token validation:', {
-      tokenExists: !!tokenData,
-      clientId: tokenData?.clientId
-    });
-
-    if (!tokenData) {
-      return res.status(401).json({
-        error: 'Unauthorized',
-        message: config.messages.invalidToken,
-        path: req.path
-      });
-    }
-
-    // Validate request body format
-    if (!req.body || typeof req.body !== 'object') {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: config.messages.invalidBody,
-        path: req.path
       });
     }
 
@@ -292,91 +256,55 @@ app.post('/api/verifyEmail', async (req, res) => {
     
     if (!email || typeof email !== 'string') {
       return res.status(400).json({
-        error: 'Bad Request',
-        message: config.messages.missingEmail,
-        path: req.path
+        success: false,
+        message: 'Email is required and must be a string'
       });
     }
 
-    // Email format validation
-    if (!config.validation.pattern.test(email)) {
+    // Basic email format validation
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(email)) {
       return res.status(400).json({
-        error: 'Bad Request',
-        message: config.validation.errorMessage,
-        path: req.path
+        success: false,
+        message: 'Invalid email format'
       });
     }
 
     // Check if email exists in Supabase
-    console.log(`Checking email in Supabase ${config.supabase.table} table:`, email);
+    console.log('Checking email in Supabase:', email);
     
-    let query = supabase
-      .from(config.supabase.table)
-      .select(`${config.supabase.idColumn}, ${config.supabase.emailColumn}`)
+    const { data: students, error } = await supabase
+      .from('students')
+      .select('id, emails')
+      .contains('emails', [email])
       .limit(1);
-
-    // Add the appropriate email filter based on configuration
-    if (config.supabase.useContains) {
-      query = query.contains(config.supabase.emailColumn, [email]);
-    } else {
-      query = query.eq(config.supabase.emailColumn, email);
-    }
-
-    const { data: students, error } = await query;
 
     if (error) {
       console.error('Supabase query error:', error);
       return res.status(500).json({
-        error: 'Database Error',
-        message: config.messages.databaseError,
-        path: req.path
+        success: false,
+        message: 'Error checking email in database'
       });
     }
-
-    console.log('Supabase query result:', { students, error });
 
     if (!students || students.length === 0) {
-      return res.status(404).json({
-        error: 'Not Found',
-        message: config.messages.notFound,
-        path: req.path
-      });
-    }
-
-    // Store verified email in Redis with expiration
-    const verificationId = crypto.randomBytes(16).toString('hex');
-    const success = await db.storeVerifiedEmail(verificationId, {
-      email,
-      studentId: students[0][config.supabase.idColumn],
-      clientId: tokenData.clientId,
-      verifiedAt: new Date().toISOString()
-    });
-
-    if (!success) {
-      return res.status(500).json({
-        error: 'Storage Error',
-        message: config.messages.storageError,
-        path: req.path
+      return res.status(200).json({
+        success: false,
+        message: 'Email not found in students database'
       });
     }
 
     // Return success response
     return res.status(200).json({
-      message: config.messages.success
+      success: true,
+      message: 'Email verified successfully'
     });
 
   } catch (error) {
     console.error('Error in email verification endpoint:', error);
-    // Return a simplified error response for test requests
-    if (req.headers['x-docusign-test'] || req.query.test) {
-      return res.status(200).json({
-        message: "Test successful"
-      });
-    }
-    return res.status(500).json({
-      error: 'Internal Server Error',
-      message: error.message || 'An error occurred while verifying the email',
-      path: req.path
+    return res.status(200).json({
+      success: false,
+      message: error.message || 'An error occurred while verifying the email'
     });
   }
 });

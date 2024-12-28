@@ -10,7 +10,8 @@ const db = {
       redirectUris: [
         'https://extensionesign-server.vercel.app/callback',
         'http://localhost:3000/callback',
-        'https://oauth.pstmn.io/v1/callback'
+        'https://oauth.pstmn.io/v1/callback',
+        'https://demo.services.docusign.net/act-gateway/v1.0/oauth/callback'
       ]
     }]
   ])

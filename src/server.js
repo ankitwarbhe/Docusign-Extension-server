@@ -258,6 +258,92 @@ app.post('/oauth2/token', (req, res) => {
   }
 });
 
+// SpecifiedArchive endpoint
+app.post('/api/specified-archive', async (req, res) => {
+  try {
+    console.log('SpecifiedArchive endpoint accessed');
+    console.log('Request headers:', req.headers);
+    
+    // Verify Bearer token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        error: 'unauthorized',
+        error_description: 'Missing or invalid authorization token'
+      });
+    }
+
+    const token = authHeader.split(' ')[1];
+    const tokenData = db.accessTokens.get(token);
+    if (!tokenData || Date.now() > tokenData.expiresAt) {
+      return res.status(401).json({
+        error: 'unauthorized',
+        error_description: 'Token expired or invalid'
+      });
+    }
+
+    // Validate request body
+    const { files, order, overwrite, parent, metadata } = req.body;
+    
+    if (!Array.isArray(files) || files.length === 0) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'Files array is required and must not be empty'
+      });
+    }
+
+    // Validate each file object
+    for (const file of files) {
+      if (!file.name || !file.content || !file.contentType || !file.path) {
+        return res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'Each file must have name, content, contentType, and path'
+        });
+      }
+    }
+
+    // Process the archive request
+    const archiveId = crypto.randomBytes(16).toString('hex');
+    const processedFiles = files.map(file => ({
+      ...file,
+      id: crypto.randomBytes(8).toString('hex'),
+      status: 'processed',
+      timestamp: new Date().toISOString()
+    }));
+
+    // Store the archive data
+    db.archives = db.archives || new Map();
+    db.archives.set(archiveId, {
+      id: archiveId,
+      files: processedFiles,
+      order: order || 0,
+      overwrite: overwrite || false,
+      parent: parent,
+      metadata: metadata || {},
+      status: 'completed',
+      createdAt: new Date().toISOString(),
+      userId: tokenData.clientId
+    });
+
+    // Return success response
+    return res.status(200).json({
+      id: archiveId,
+      files: processedFiles,
+      status: 'completed',
+      metadata: metadata || {},
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error in SpecifiedArchive endpoint:', error);
+    res.status(500).json({
+      error: 'server_error',
+      error_description: 'An error occurred while processing the archive',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);

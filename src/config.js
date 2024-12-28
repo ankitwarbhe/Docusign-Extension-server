@@ -4,16 +4,23 @@ const config = {
   accessTokenExpiration: 3600, // 1 hour
   jwtSecret: process.env.JWT_SECRET || 'bc97aeda1a6e78c3c806461dae5958564ac22191932cf6c5e0f26f7470296e328f1509dbffcf9762a94313bc49c63197544ef95ab774d9647bd084d2d2fd82f9',
 
+  // Database configuration
+  database: {
+    supabase: {
+      tables: {
+        students: {
+          name: process.env.SUPABASE_STUDENTS_TABLE || 'students',
+          columns: {
+            id: process.env.SUPABASE_STUDENTS_ID_COLUMN || 'id',
+            email: process.env.SUPABASE_STUDENTS_EMAIL_COLUMN || 'emails'
+          }
+        }
+      }
+    }
+  },
+
   // Email verification settings
   emailVerification: {
-    // Database configuration
-    supabase: {
-      table: 'students',
-      emailColumn: 'emails',
-      idColumn: 'id',
-      useContains: true  // Set to true if emails is an array, false if it's a single value
-    },
-    
     // Email format validation
     validation: {
       pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,

@@ -88,35 +88,42 @@ const verifyEmail = async (req, res) => {
   const { email } = req.body;
   try {
     // Regular expression to check if the email is in a valid format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailRegex = config.emailVerification.validation.pattern;
 
     if (!emailRegex.test(email)) {
-      throw new Error("Invalid email format.");
+      throw new Error(config.emailVerification.messages.invalidFormat);
     }
+
+    // Get table and column names from config
+    const { name: tableName, columns } = config.database.supabase.tables.students;
 
     // Check if the email exists in Supabase students table
     const { data: students, error } = await supabase
-      .from('students')
-      .select('id, emails')
-      .eq('emails', email);
+      .from(tableName)
+      .select(`${columns.id}, ${columns.email}`)
+      .eq(columns.email, email);
 
     if (error) {
       console.error('Supabase query error:', error);
-      throw new Error("Error checking email in database");
+      throw new Error(config.emailVerification.messages.databaseError);
     }
 
     if (!students || students.length === 0) {
-      throw new Error("No match found for provided email details");
+      throw new Error(config.emailVerification.messages.notFound);
     }
 
     const student = students[0];
 
     // Store verification in Redis for future reference
-    const verificationId = `${email}_${Date.now()}`;
-    await db.storeVerifiedEmail(verificationId, {
+    const verificationId = `${config.emailVerification.storage.prefix}${email}_${Date.now()}`;
+    const stored = await db.storeVerifiedEmail(verificationId, {
       email,
-      studentId: student.id
+      studentId: student[columns.id]
     });
+
+    if (!stored) {
+      throw new Error(config.emailVerification.messages.storageError);
+    }
 
     return res.json({ verified: true });
   } catch (err) {

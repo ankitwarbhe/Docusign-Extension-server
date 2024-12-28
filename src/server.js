@@ -1,6 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const { expressjwt: jwt } = require('express-jwt');
+const jwt = require('express-jwt');
 const { validationResult, checkSchema } = require('express-validator');
 const config = require('./config');
 
@@ -32,7 +32,7 @@ app.use((req, res, next) => {
 });
 
 // JWT authentication middleware
-const authenticateJWT = jwt({
+const authenticateJWT = jwt.expressjwt({
   secret: process.env.JWT_SECRET_KEY || config.jwtSecret,
   algorithms: ['HS256']
 });

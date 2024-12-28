@@ -95,20 +95,21 @@ const verifyEmail = async (req, res) => {
     }
 
     // Check if the email exists in Supabase students table
-    const { data: student, error } = await supabase
+    const { data: students, error } = await supabase
       .from('students')
-      .select('emails')
-      .contains('emails', [email])
-      .single();
+      .select('id, emails')
+      .eq('emails', email);
 
     if (error) {
       console.error('Supabase query error:', error);
       throw new Error("Error checking email in database");
     }
 
-    if (!student) {
+    if (!students || students.length === 0) {
       throw new Error("No match found for provided email details");
     }
+
+    const student = students[0];
 
     // Store verification in Redis for future reference
     const verificationId = `${email}_${Date.now()}`;

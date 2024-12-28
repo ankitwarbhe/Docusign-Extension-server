@@ -30,7 +30,7 @@ const router = Router();
 
 // JWT authentication middleware
 const authenticateJWT = jwt({
-  secret: process.env.JWT_SECRET_KEY || config.jwtSecret,
+  secret: config.jwtSecret,
   algorithms: ['HS256']
 });
 

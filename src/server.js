@@ -2,11 +2,15 @@ require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
+const path = require('path');
 const config = require('./config');
 const db = require('./db');
 const { generateAuthorizationCode, generateAccessToken, generateRefreshToken, validateClient } = require('./utils');
 
 const app = express();
+
+// Serve static files from public directory
+app.use(express.static(path.join(__dirname, '../public')));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -283,11 +287,29 @@ app.post('/api/specified-archive', async (req, res) => {
 
     // Process the files
     const processedFiles = files.map(file => ({
+      id: crypto.randomBytes(8).toString('hex'),
       name: file.name,
       content: file.content,
       contentType: file.contentType,
-      path: file.path
+      path: file.path,
+      status: 'processed',
+      timestamp: new Date().toISOString()
     }));
+
+    // Store the archive data
+    const archiveId = crypto.randomBytes(16).toString('hex');
+    const archiveData = {
+      id: archiveId,
+      files: processedFiles,
+      order: order || 0,
+      overwrite: overwrite || false,
+      parent: parent,
+      metadata: metadata || {},
+      status: 'completed',
+      createdAt: new Date().toISOString(),
+      userId: tokenData.clientId
+    };
+    db.archives.set(archiveId, archiveData);
 
     // Return success response
     return res.status(200).json({
@@ -298,6 +320,32 @@ app.post('/api/specified-archive', async (req, res) => {
     console.error('Error in SpecifiedArchive endpoint:', error);
     return res.status(500).json({
       message: 'An error occurred while processing the archive'
+    });
+  }
+});
+
+// Get files endpoint
+app.get('/api/files', async (req, res) => {
+  try {
+    const files = Array.from(db.archives.values()).flatMap(archive => 
+      archive.files.map(file => ({
+        id: file.id || crypto.randomBytes(8).toString('hex'),
+        name: file.name,
+        path: file.path,
+        contentType: file.contentType,
+        uploadedAt: archive.createdAt || new Date().toISOString(),
+        archiveId: archive.id
+      }))
+    );
+
+    res.json({
+      files,
+      total: files.length
+    });
+  } catch (error) {
+    console.error('Error getting files:', error);
+    res.status(500).json({
+      message: 'Error retrieving files'
     });
   }
 });

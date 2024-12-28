@@ -2,7 +2,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const config = require('./config');
 const db = require('./db');
-const { generateAuthorizationCode, generateAccessToken, validateClient } = require('./utils');
+const { generateAuthorizationCode, generateAccessToken, generateRefreshToken, validateClient } = require('./utils');
 
 const app = express();
 
@@ -207,11 +207,23 @@ app.post('/oauth2/token', (req, res) => {
       const accessToken = generateAccessToken(client_id, codeData.scope);
       console.log('Generated access token');
 
-      // Store token
+      // Generate refresh token if offline access was requested
+      const refreshToken = generateRefreshToken(client_id, codeData.scope);
+      console.log('Generated refresh token');
+
+      // Store tokens
       db.accessTokens.set(accessToken, {
         clientId: client_id,
         scope: codeData.scope,
         expiresAt: Date.now() + (config.accessTokenExpiration * 1000)
+      });
+
+      // Store refresh token
+      db.refreshTokens = db.refreshTokens || new Map();
+      db.refreshTokens.set(refreshToken, {
+        clientId: client_id,
+        scope: codeData.scope,
+        expiresAt: Date.now() + (30 * 24 * 60 * 60 * 1000) // 30 days
       });
 
       // Remove used authorization code
@@ -221,9 +233,14 @@ app.post('/oauth2/token', (req, res) => {
         access_token: accessToken,
         token_type: 'Bearer',
         expires_in: config.accessTokenExpiration,
-        scope: codeData.scope
+        scope: codeData.scope,
+        refresh_token: refreshToken
       };
-      console.log('Sending response:', { ...response, access_token: '[REDACTED]' });
+      console.log('Sending response:', { 
+        ...response, 
+        access_token: '[REDACTED]',
+        refresh_token: '[REDACTED]'
+      });
       return res.json(response);
     }
 

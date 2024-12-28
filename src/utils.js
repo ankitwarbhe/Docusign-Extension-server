@@ -19,6 +19,18 @@ function generateAccessToken(clientId, scope) {
   );
 }
 
+function generateRefreshToken(clientId, scope) {
+  return jwt.sign(
+    {
+      clientId,
+      scope,
+      type: 'refresh_token'
+    },
+    config.jwtSecret,
+    { expiresIn: 60 * 60 * 24 * 30 } // 30 days
+  );
+}
+
 function validateClient(clientId, clientSecret) {
   const client = db.clients.get(clientId);
   return client && client.clientSecret === clientSecret;
@@ -27,5 +39,6 @@ function validateClient(clientId, clientSecret) {
 module.exports = {
   generateAuthorizationCode,
   generateAccessToken,
+  generateRefreshToken,
   validateClient
 };

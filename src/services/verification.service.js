@@ -47,12 +47,6 @@ const SAMPLE_ADDRESSES = [
   }
 ];
 
-const SAMPLE_EMAIL_DATABASE = [
-  { email: 'test@example.com' },
-  { email: 'valid@test.com' },
-  { email: 'docusign@test.com' }
-];
-
 // Verification functions
 const verifyBankAccountOwner = async (req, res) => {
   try {
@@ -100,11 +94,28 @@ const verifyEmail = async (req, res) => {
       throw new Error("Invalid email format.");
     }
 
-    // Check if the email exists in the database
-    const emailFound = SAMPLE_EMAIL_DATABASE.find(person => person.email === email);
-    if (!emailFound) {
+    // Check if the email exists in Supabase students table
+    const { data: student, error } = await supabase
+      .from('students')
+      .select('emails')
+      .contains('emails', [email])
+      .single();
+
+    if (error) {
+      console.error('Supabase query error:', error);
+      throw new Error("Error checking email in database");
+    }
+
+    if (!student) {
       throw new Error("No match found for provided email details");
     }
+
+    // Store verification in Redis for future reference
+    const verificationId = `${email}_${Date.now()}`;
+    await db.storeVerifiedEmail(verificationId, {
+      email,
+      studentId: student.id
+    });
 
     return res.json({ verified: true });
   } catch (err) {

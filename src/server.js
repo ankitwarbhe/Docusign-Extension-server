@@ -255,7 +255,7 @@ app.post('/api/verifyEmail', async (req, res) => {
     const { email } = req.body;
     
     if (!email || typeof email !== 'string') {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         message: 'Email is required and must be a string'
       });
@@ -264,7 +264,7 @@ app.post('/api/verifyEmail', async (req, res) => {
     // Basic email format validation
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     if (!emailRegex.test(email)) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         message: 'Invalid email format'
       });
@@ -281,7 +281,7 @@ app.post('/api/verifyEmail', async (req, res) => {
 
     if (error) {
       console.error('Supabase query error:', error);
-      return res.status(500).json({
+      return res.status(200).json({
         success: false,
         message: 'Error checking email in database'
       });
@@ -290,7 +290,7 @@ app.post('/api/verifyEmail', async (req, res) => {
     if (!students || students.length === 0) {
       return res.status(200).json({
         success: false,
-        message: 'Email not found in students database'
+        message: 'Email not found in database'
       });
     }
 

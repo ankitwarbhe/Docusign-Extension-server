@@ -14,8 +14,10 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(bodyParser.json());
+// Parse URL-encoded bodies (as sent by HTML forms)
 app.use(bodyParser.urlencoded({ extended: true }));
+// Parse JSON bodies (as sent by API clients)
+app.use(bodyParser.json());
 
 // Add CORS headers
 app.use((req, res, next) => {
@@ -110,15 +112,31 @@ app.get('/oauth2/authorize', (req, res) => {
 app.post('/oauth2/token', (req, res) => {
   try {
     console.log('Token endpoint accessed');
+    console.log('Request headers:', req.headers);
+    console.log('Content-Type:', req.headers['content-type']);
     console.log('Request body:', req.body);
+    console.log('Raw request body:', req.rawBody);
     
     const { grant_type, code, client_id, client_secret, redirect_uri } = req.body;
 
+    console.log('Parsed parameters:', {
+      grant_type,
+      code,
+      client_id,
+      client_secret: client_secret ? '[REDACTED]' : undefined,
+      redirect_uri
+    });
+
     // Check for required parameters
     if (!grant_type || !client_id || !client_secret) {
-      console.log('Missing required parameters');
+      console.log('Missing required parameters:', {
+        grant_type: !grant_type,
+        client_id: !client_id,
+        client_secret: !client_secret
+      });
       return res.status(400).json({
         error: 'invalid_request',
+        error_description: 'Missing required parameters',
         missing_params: {
           grant_type: !grant_type,
           client_id: !client_id,
@@ -133,13 +151,14 @@ app.post('/oauth2/token', (req, res) => {
     const client = db.clients.get(client_id);
     console.log('Client validation:', {
       clientExists: !!client,
-      secretMatches: client?.clientSecret === client_secret
+      secretMatches: client?.clientSecret === client_secret,
+      clientId
     });
 
     if (!client || client.clientSecret !== client_secret) {
       return res.status(401).json({ 
         error: 'invalid_client',
-        message: 'Invalid client credentials'
+        error_description: 'Invalid client credentials'
       });
     }
 
@@ -149,7 +168,9 @@ app.post('/oauth2/token', (req, res) => {
       console.log('Authorization code validation:', {
         codeExists: !!codeData,
         clientMatches: codeData?.clientId === client_id,
-        notExpired: codeData && Date.now() <= codeData.expiresAt
+        notExpired: codeData && Date.now() <= codeData.expiresAt,
+        code,
+        storedCodes: Array.from(db.authorizationCodes.keys())
       });
 
       if (!codeData || 
@@ -157,7 +178,7 @@ app.post('/oauth2/token', (req, res) => {
           Date.now() > codeData.expiresAt) {
         return res.status(400).json({ 
           error: 'invalid_grant',
-          message: 'Invalid or expired authorization code'
+          error_description: 'Invalid or expired authorization code'
         });
       }
 
@@ -175,23 +196,25 @@ app.post('/oauth2/token', (req, res) => {
       // Remove used authorization code
       db.authorizationCodes.delete(code);
 
-      return res.json({
+      const response = {
         access_token: accessToken,
         token_type: 'Bearer',
         expires_in: config.accessTokenExpiration,
         scope: codeData.scope
-      });
+      };
+      console.log('Sending response:', { ...response, access_token: '[REDACTED]' });
+      return res.json(response);
     }
 
     return res.status(400).json({ 
       error: 'unsupported_grant_type',
-      message: 'Only authorization_code grant type is supported'
+      error_description: 'Only authorization_code grant type is supported'
     });
   } catch (error) {
     console.error('Error in token endpoint:', error);
     res.status(500).json({ 
       error: 'server_error', 
-      message: error.message,
+      error_description: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }

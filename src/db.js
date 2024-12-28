@@ -21,7 +21,6 @@ const db = {
       ]
     }]
   ]),
-  archives: new Map(),
 
   // Token management methods
   async storeAccessToken(token, data) {
@@ -116,6 +115,35 @@ const db = {
       this.accessTokens.delete(token);
       this.refreshTokens.delete(token);
       return true;
+    }
+  },
+
+  async storeVerifiedEmail(verificationId, data) {
+    try {
+      await redis.set(
+        `verified_email:${verificationId}`,
+        JSON.stringify({
+          ...data,
+          verifiedAt: new Date().toISOString()
+        }),
+        'EX',
+        60 * 60 * 24 // 24 hours expiration
+      );
+      return true;
+    } catch (error) {
+      console.error('Redis store verified email error:', error);
+      return false;
+    }
+  },
+
+  async getVerifiedEmail(verificationId) {
+    try {
+      const data = await redis.get(`verified_email:${verificationId}`);
+      if (!data) return null;
+      return JSON.parse(data);
+    } catch (error) {
+      console.error('Redis get verified email error:', error);
+      return null;
     }
   }
 };

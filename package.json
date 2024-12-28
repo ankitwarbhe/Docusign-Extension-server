@@ -11,7 +11,8 @@
     "crypto": "^1.0.1",
     "body-parser": "^1.20.2",
     "dotenv": "^16.3.1",
-    "ioredis": "^5.3.2"
+    "ioredis": "^5.3.2",
+    "@supabase/supabase-js": "^2.39.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

@@ -1,9 +1,44 @@
 const config = {
-  clientId: '7b2e685bf08b5cb99c36518619c024c1ed1333e8f4eaae4ef5c5d4e29ca0b70e7dcf21e0fa08a0b29b076e9d5cd420cce6eba1f4f433e906cdc6c743907ef696',
-  clientSecret: '4f70c91e5390f5b0fd9bbc28e5b9f9ad8f9341ac5c42ad33f295387333eb10106555fa52957427c01038bcfc05264f8b895422fd8d01ca1448b3c16c5d9bd6aa',
-  jwtSecret: 'bc97aeda1a6e78c3c806461dae5958564ac22191932cf6c5e0f26f7470296e328f1509dbffcf9762a94313bc49c63197544ef95ab774d9647bd084d2d2fd82f9',
+  // OAuth settings
   authorizationCodeExpiration: 600, // 10 minutes
-  accessTokenExpiration: 3600 // 1 hour
+  accessTokenExpiration: 3600, // 1 hour
+  jwtSecret: process.env.JWT_SECRET || 'bc97aeda1a6e78c3c806461dae5958564ac22191932cf6c5e0f26f7470296e328f1509dbffcf9762a94313bc49c63197544ef95ab774d9647bd084d2d2fd82f9',
+
+  // Email verification settings
+  emailVerification: {
+    // Database configuration
+    supabase: {
+      table: 'students',
+      emailColumn: 'emails',
+      idColumn: 'id',
+      useContains: true  // Set to true if emails is an array, false if it's a single value
+    },
+    
+    // Email format validation
+    validation: {
+      pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
+      errorMessage: 'Invalid email format'
+    },
+
+    // Redis storage settings
+    storage: {
+      prefix: 'verified_email:',
+      expirationSeconds: 24 * 60 * 60  // 24 hours
+    },
+
+    // Response messages
+    messages: {
+      success: 'Email verified successfully',
+      notFound: 'Email not found in students database',
+      invalidFormat: 'Invalid email format',
+      databaseError: 'Error checking email in database',
+      storageError: 'Failed to store email verification',
+      invalidToken: 'Token expired or invalid',
+      missingToken: 'Missing or invalid authorization token',
+      invalidBody: 'Invalid request body format',
+      missingEmail: 'Email is required and must be a string'
+    }
+  }
 };
 
 module.exports = config;

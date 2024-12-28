@@ -5,12 +5,10 @@ const crypto = require('crypto');
 const path = require('path');
 const config = require('./config');
 const db = require('./db');
+const supabase = require('./supabase');
 const { generateAuthorizationCode, generateAccessToken, generateRefreshToken, validateClient } = require('./utils');
 
 const app = express();
-
-// Serve static files from public directory
-app.use(express.static(path.join(__dirname, '../public')));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -238,16 +236,17 @@ app.post('/oauth2/token', async (req, res) => {
   }
 });
 
-// SpecifiedArchive endpoint
-app.post('/api/specified-archive', async (req, res) => {
+// Email verification endpoint
+app.post('/api/verifyEmail', async (req, res) => {
   try {
-    console.log('SpecifiedArchive endpoint accessed');
+    console.log('Email verification endpoint accessed');
+    const { emailVerification: config } = require('./config').emailVerification;
     
     // Verify Bearer token
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
-        message: 'Missing or invalid authorization token'
+        message: config.messages.missingToken
       });
     }
 
@@ -261,91 +260,89 @@ app.post('/api/specified-archive', async (req, res) => {
 
     if (!tokenData) {
       return res.status(401).json({
-        message: 'Token expired or invalid'
+        message: config.messages.invalidToken
       });
     }
 
-    // Validate request body
-    const { files, order, overwrite, parent, metadata } = req.body;
+    // Validate request body format
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).json({
+        message: config.messages.invalidBody
+      });
+    }
+
+    // Get email from request body
+    const { email } = req.body;
     
-    if (!files || !Array.isArray(files) || files.length === 0) {
+    if (!email || typeof email !== 'string') {
       return res.status(400).json({
-        message: 'Files array is required and must not be empty'
+        message: config.messages.missingEmail
       });
     }
 
-    // Validate each file object
-    const invalidFiles = files.filter(file => 
-      !file.name || !file.content || !file.contentType || !file.path
-    );
-
-    if (invalidFiles.length > 0) {
+    // Email format validation
+    if (!config.validation.pattern.test(email)) {
       return res.status(400).json({
-        message: 'Each file must have name, content, contentType, and path'
+        message: config.validation.errorMessage
       });
     }
 
-    // Process the files
-    const processedFiles = files.map(file => ({
-      id: crypto.randomBytes(8).toString('hex'),
-      name: file.name,
-      content: file.content,
-      contentType: file.contentType,
-      path: file.path,
-      status: 'processed',
-      timestamp: new Date().toISOString()
-    }));
+    // Check if email exists in Supabase
+    console.log(`Checking email in Supabase ${config.supabase.table} table:`, email);
+    
+    let query = supabase
+      .from(config.supabase.table)
+      .select(`${config.supabase.idColumn}, ${config.supabase.emailColumn}`)
+      .limit(1);
 
-    // Store the archive data
-    const archiveId = crypto.randomBytes(16).toString('hex');
-    const archiveData = {
-      id: archiveId,
-      files: processedFiles,
-      order: order || 0,
-      overwrite: overwrite || false,
-      parent: parent,
-      metadata: metadata || {},
-      status: 'completed',
-      createdAt: new Date().toISOString(),
-      userId: tokenData.clientId
-    };
-    db.archives.set(archiveId, archiveData);
+    // Add the appropriate email filter based on configuration
+    if (config.supabase.useContains) {
+      query = query.contains(config.supabase.emailColumn, [email]);
+    } else {
+      query = query.eq(config.supabase.emailColumn, email);
+    }
+
+    const { data: students, error } = await query;
+
+    if (error) {
+      console.error('Supabase query error:', error);
+      return res.status(500).json({
+        message: config.messages.databaseError
+      });
+    }
+
+    console.log('Supabase query result:', { students, error });
+
+    if (!students || students.length === 0) {
+      return res.status(404).json({
+        message: config.messages.notFound
+      });
+    }
+
+    // Store verified email in Redis with expiration
+    const verificationId = crypto.randomBytes(16).toString('hex');
+    const success = await db.storeVerifiedEmail(verificationId, {
+      email,
+      studentId: students[0][config.supabase.idColumn],
+      clientId: tokenData.clientId,
+      verifiedAt: new Date().toISOString()
+    });
+
+    if (!success) {
+      return res.status(500).json({
+        message: config.messages.storageError
+      });
+    }
 
     // Return success response
     return res.status(200).json({
-      message: 'Archive processed successfully'
+      message: config.messages.success
     });
 
   } catch (error) {
-    console.error('Error in SpecifiedArchive endpoint:', error);
+    console.error('Error in email verification endpoint:', error);
     return res.status(500).json({
-      message: 'An error occurred while processing the archive'
-    });
-  }
-});
-
-// Get files endpoint
-app.get('/api/files', async (req, res) => {
-  try {
-    const files = Array.from(db.archives.values()).flatMap(archive => 
-      archive.files.map(file => ({
-        id: file.id || crypto.randomBytes(8).toString('hex'),
-        name: file.name,
-        path: file.path,
-        contentType: file.contentType,
-        uploadedAt: archive.createdAt || new Date().toISOString(),
-        archiveId: archive.id
-      }))
-    );
-
-    res.json({
-      files,
-      total: files.length
-    });
-  } catch (error) {
-    console.error('Error getting files:', error);
-    res.status(500).json({
-      message: 'Error retrieving files'
+      message: error.message || 'An error occurred while verifying the email'
     });
   }
 });

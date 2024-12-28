@@ -1,5 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const crypto = require('crypto');
 const config = require('./config');
 const db = require('./db');
 const { generateAuthorizationCode, generateAccessToken, generateRefreshToken, validateClient } = require('./utils');
@@ -11,6 +12,9 @@ app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   console.log('Query params:', req.query);
   console.log('Headers:', req.headers);
+  if (req.body) {
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+  }
   next();
 });
 
@@ -263,10 +267,12 @@ app.post('/api/specified-archive', async (req, res) => {
   try {
     console.log('SpecifiedArchive endpoint accessed');
     console.log('Request headers:', req.headers);
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
     
     // Verify Bearer token
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log('Missing or invalid authorization header');
       return res.status(401).json({
         error: 'unauthorized',
         error_description: 'Missing or invalid authorization token'
@@ -275,6 +281,11 @@ app.post('/api/specified-archive', async (req, res) => {
 
     const token = authHeader.split(' ')[1];
     const tokenData = db.accessTokens.get(token);
+    console.log('Token validation:', {
+      tokenExists: !!tokenData,
+      notExpired: tokenData && Date.now() <= tokenData.expiresAt
+    });
+
     if (!tokenData || Date.now() > tokenData.expiresAt) {
       return res.status(401).json({
         error: 'unauthorized',
@@ -284,8 +295,15 @@ app.post('/api/specified-archive', async (req, res) => {
 
     // Validate request body
     const { files, order, overwrite, parent, metadata } = req.body;
+    console.log('Parsed request body:', {
+      filesCount: files?.length,
+      order,
+      overwrite,
+      parent,
+      hasMetadata: !!metadata
+    });
     
-    if (!Array.isArray(files) || files.length === 0) {
+    if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json({
         error: 'invalid_request',
         error_description: 'Files array is required and must not be empty'
@@ -293,17 +311,23 @@ app.post('/api/specified-archive', async (req, res) => {
     }
 
     // Validate each file object
-    for (const file of files) {
-      if (!file.name || !file.content || !file.contentType || !file.path) {
-        return res.status(400).json({
-          error: 'invalid_request',
-          error_description: 'Each file must have name, content, contentType, and path'
-        });
-      }
+    const invalidFiles = files.filter(file => 
+      !file.name || !file.content || !file.contentType || !file.path
+    );
+
+    if (invalidFiles.length > 0) {
+      console.log('Invalid files found:', invalidFiles.map(f => f.name));
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'Each file must have name, content, contentType, and path',
+        invalid_files: invalidFiles.map(f => f.name)
+      });
     }
 
     // Process the archive request
     const archiveId = crypto.randomBytes(16).toString('hex');
+    console.log('Generated archive ID:', archiveId);
+
     const processedFiles = files.map(file => ({
       ...file,
       id: crypto.randomBytes(8).toString('hex'),
@@ -313,7 +337,7 @@ app.post('/api/specified-archive', async (req, res) => {
 
     // Store the archive data
     db.archives = db.archives || new Map();
-    db.archives.set(archiveId, {
+    const archiveData = {
       id: archiveId,
       files: processedFiles,
       order: order || 0,
@@ -323,23 +347,29 @@ app.post('/api/specified-archive', async (req, res) => {
       status: 'completed',
       createdAt: new Date().toISOString(),
       userId: tokenData.clientId
-    });
+    };
+    db.archives.set(archiveId, archiveData);
+    console.log('Stored archive data with ID:', archiveId);
 
     // Return success response
-    return res.status(200).json({
+    const response = {
       id: archiveId,
       files: processedFiles,
       status: 'completed',
       metadata: metadata || {},
       timestamp: new Date().toISOString()
-    });
+    };
+    console.log('Sending response for archive:', archiveId);
+    return res.status(200).json(response);
 
   } catch (error) {
     console.error('Error in SpecifiedArchive endpoint:', error);
+    console.error('Stack trace:', error.stack);
     res.status(500).json({
       error: 'server_error',
       error_description: 'An error occurred while processing the archive',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });

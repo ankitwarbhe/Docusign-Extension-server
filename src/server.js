@@ -3,7 +3,8 @@ const bodyParser = require('body-parser');
 const { expressjwt: jwt } = require('express-jwt');
 const { validationResult, checkSchema } = require('express-validator');
 const config = require('./config');
-const apiRouter = require('./routes/api.router');
+const apiRouter = require('./api.router');
+const authRouter = require('./controllers/auth.controller');
 
 const app = express();
 
@@ -36,12 +37,14 @@ app.get('/', (req, res) => {
   res.json({ 
     status: 'Server is running',
     timestamp: new Date().toISOString(),
-    routes: ['/api/verify/*', '/api/auth/*']
+    routes: ['/oauth2/*', '/api/verify/*', '/api/auth/*']
   });
 });
 
-// Mount API router
+// Mount routers
 app.use('/api', apiRouter);
+// Support both /oauth2 and /api/auth paths for OAuth endpoints
+app.use('/oauth2', authRouter);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

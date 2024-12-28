@@ -243,8 +243,7 @@ app.post('/api/specified-archive', async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
-        error: 'unauthorized',
-        error_description: 'Missing or invalid authorization token'
+        message: 'Missing or invalid authorization token'
       });
     }
 
@@ -258,8 +257,7 @@ app.post('/api/specified-archive', async (req, res) => {
 
     if (!tokenData) {
       return res.status(401).json({
-        error: 'unauthorized',
-        error_description: 'Token expired or invalid'
+        message: 'Token expired or invalid'
       });
     }
 
@@ -268,8 +266,7 @@ app.post('/api/specified-archive', async (req, res) => {
     
     if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json({
-        error: 'invalid_request',
-        error_description: 'Files array is required and must not be empty'
+        message: 'Files array is required and must not be empty'
       });
     }
 
@@ -280,55 +277,27 @@ app.post('/api/specified-archive', async (req, res) => {
 
     if (invalidFiles.length > 0) {
       return res.status(400).json({
-        error: 'invalid_request',
-        error_description: 'Each file must have name, content, contentType, and path',
-        invalid_files: invalidFiles.map(f => f.name)
+        message: 'Each file must have name, content, contentType, and path'
       });
     }
 
-    // Process the archive request
-    const archiveId = crypto.randomBytes(16).toString('hex');
+    // Process the files
     const processedFiles = files.map(file => ({
-      ...file,
-      id: crypto.randomBytes(8).toString('hex'),
-      status: 'processed',
-      timestamp: new Date().toISOString()
+      name: file.name,
+      content: file.content,
+      contentType: file.contentType,
+      path: file.path
     }));
-
-    // Store the archive data
-    const archiveData = {
-      id: archiveId,
-      files: processedFiles,
-      order: order || 0,
-      overwrite: overwrite || false,
-      parent: parent,
-      metadata: metadata || {},
-      status: 'completed',
-      createdAt: new Date().toISOString(),
-      userId: tokenData.clientId
-    };
-    db.archives.set(archiveId, archiveData);
 
     // Return success response
     return res.status(200).json({
-      id: archiveId,
-      files: processedFiles.map(file => ({
-        id: file.id,
-        name: file.name,
-        status: file.status,
-        timestamp: file.timestamp
-      })),
-      status: 'completed',
-      metadata: metadata || {},
-      timestamp: new Date().toISOString()
+      message: 'Archive processed successfully'
     });
 
   } catch (error) {
     console.error('Error in SpecifiedArchive endpoint:', error);
-    res.status(500).json({
-      error: 'server_error',
-      error_description: 'An error occurred while processing the archive',
-      message: error.message
+    return res.status(500).json({
+      message: 'An error occurred while processing the archive'
     });
   }
 });

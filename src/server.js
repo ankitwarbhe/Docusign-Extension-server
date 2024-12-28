@@ -167,7 +167,7 @@ app.post('/oauth2/token', (req, res) => {
     console.log('Client validation:', {
       clientExists: !!client,
       secretMatches: client?.clientSecret === client_secret,
-      clientId
+      client_id: client_id ? '[PRESENT]' : undefined
     });
 
     if (!client || client.clientSecret !== client_secret) {
@@ -184,8 +184,14 @@ app.post('/oauth2/token', (req, res) => {
         codeExists: !!codeData,
         clientMatches: codeData?.clientId === client_id,
         notExpired: codeData && Date.now() <= codeData.expiresAt,
-        code,
-        storedCodes: Array.from(db.authorizationCodes.keys())
+        providedCode: code,
+        storedCodes: Array.from(db.authorizationCodes.keys()),
+        storedData: codeData ? {
+          clientId: codeData.clientId,
+          scope: codeData.scope,
+          expiresAt: new Date(codeData.expiresAt).toISOString()
+        } : null,
+        currentTime: new Date().toISOString()
       });
 
       if (!codeData || 

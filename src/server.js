@@ -48,7 +48,7 @@ app.get('/oauth2/authorize', (req, res) => {
     console.log('Authorize endpoint accessed');
     console.log('Query parameters:', req.query);
     
-    const { client_id, redirect_uri, response_type, scope, state } = req.query;
+  const { client_id, redirect_uri, response_type, scope, state } = req.query;
 
     if (!client_id || !redirect_uri || !response_type) {
       console.log('Missing required parameters');
@@ -62,14 +62,14 @@ app.get('/oauth2/authorize', (req, res) => {
       });
     }
 
-    // Validate client and redirect URI
-    const client = db.clients.get(client_id);
+  // Validate client and redirect URI
+  const client = db.clients.get(client_id);
     console.log('Client lookup result:', {
       clientFound: !!client,
       validRedirectUri: client?.redirectUris.includes(redirect_uri)
     });
     
-    if (!client || !client.redirectUris.includes(redirect_uri)) {
+  if (!client || !client.redirectUris.includes(redirect_uri)) {
       console.log('Invalid client or redirect URI');
       return res.status(400).json({ 
         error: 'invalid_client',
@@ -78,30 +78,30 @@ app.get('/oauth2/authorize', (req, res) => {
           valid_redirect_uri: client?.redirectUris.includes(redirect_uri)
         }
       });
-    }
+  }
 
-    if (response_type !== 'code') {
-      return res.status(400).json({ error: 'unsupported_response_type' });
-    }
+  if (response_type !== 'code') {
+    return res.status(400).json({ error: 'unsupported_response_type' });
+  }
 
-    // Generate authorization code
-    const code = generateAuthorizationCode();
-    
-    // Store the authorization code with associated data
-    db.authorizationCodes.set(code, {
-      clientId: client_id,
-      scope,
-      expiresAt: Date.now() + (config.authorizationCodeExpiration * 1000)
-    });
+  // Generate authorization code
+  const code = generateAuthorizationCode();
+  
+  // Store the authorization code with associated data
+  db.authorizationCodes.set(code, {
+    clientId: client_id,
+    scope,
+    expiresAt: Date.now() + (config.authorizationCodeExpiration * 1000)
+  });
 
-    // Redirect back to client with code
-    const redirectUrl = new URL(redirect_uri);
-    redirectUrl.searchParams.append('code', code);
-    if (state) {
-      redirectUrl.searchParams.append('state', state);
-    }
+  // Redirect back to client with code
+  const redirectUrl = new URL(redirect_uri);
+  redirectUrl.searchParams.append('code', code);
+  if (state) {
+    redirectUrl.searchParams.append('state', state);
+  }
 
-    res.redirect(redirectUrl.toString());
+  res.redirect(redirectUrl.toString());
   } catch (error) {
     console.error('Error in authorize endpoint:', error);
     res.status(500).json({ error: 'server_error', message: error.message });
@@ -132,29 +132,29 @@ app.post('/oauth2/token', async (req, res) => {
 
     const { grant_type, code, redirect_uri } = req.body;
 
-    // Validate client credentials
+  // Validate client credentials
     const client = db.clients.get(client_id);
     if (!client || client.clientSecret !== client_secret) {
       return res.status(401).json({ 
         error: 'invalid_client',
         error_description: 'Invalid client credentials'
       });
-    }
+  }
 
-    if (grant_type === 'authorization_code') {
-      // Validate authorization code
-      const codeData = db.authorizationCodes.get(code);
-      if (!codeData || 
-          codeData.clientId !== client_id || 
-          Date.now() > codeData.expiresAt) {
+  if (grant_type === 'authorization_code') {
+    // Validate authorization code
+    const codeData = db.authorizationCodes.get(code);
+    if (!codeData || 
+        codeData.clientId !== client_id || 
+        Date.now() > codeData.expiresAt) {
         return res.status(400).json({ 
           error: 'invalid_grant',
           error_description: 'Invalid or expired authorization code'
         });
-      }
+    }
 
       // Generate tokens
-      const accessToken = generateAccessToken(client_id, codeData.scope);
+    const accessToken = generateAccessToken(client_id, codeData.scope);
       const refreshToken = generateRefreshToken(client_id, codeData.scope);
 
       // Store tokens
@@ -165,21 +165,21 @@ app.post('/oauth2/token', async (req, res) => {
       });
 
       await db.storeRefreshToken(refreshToken, {
-        clientId: client_id,
-        scope: codeData.scope,
+      clientId: client_id,
+      scope: codeData.scope,
         expiresIn: 30 * 24 * 60 * 60 // 30 days
-      });
+    });
 
-      // Remove used authorization code
-      db.authorizationCodes.delete(code);
+    // Remove used authorization code
+    db.authorizationCodes.delete(code);
 
-      return res.json({
-        access_token: accessToken,
+    return res.json({
+      access_token: accessToken,
         refresh_token: refreshToken,
-        token_type: 'Bearer',
-        expires_in: config.accessTokenExpiration,
-        scope: codeData.scope
-      });
+      token_type: 'Bearer',
+      expires_in: config.accessTokenExpiration,
+      scope: codeData.scope
+    });
     } else if (grant_type === 'refresh_token') {
       const refresh_token = req.body.refresh_token;
       if (!refresh_token) {

@@ -117,8 +117,6 @@ app.post('/oauth2/token', (req, res) => {
   try {
     console.log('Token endpoint accessed');
     console.log('Request headers:', req.headers);
-    console.log('Content-Type:', req.headers['content-type']);
-    console.log('Request body:', req.body);
     
     let client_id, client_secret;
     
@@ -129,7 +127,7 @@ app.post('/oauth2/token', (req, res) => {
       const base64Credentials = authHeader.split(' ')[1];
       const credentials = Buffer.from(base64Credentials, 'base64').toString('ascii');
       [client_id, client_secret] = credentials.split(':');
-      console.log('Extracted client_id from Basic auth');
+      console.log('Extracted client credentials from Basic auth');
     } else {
       // Fall back to body parameters
       client_id = req.body.client_id;
@@ -138,42 +136,8 @@ app.post('/oauth2/token', (req, res) => {
 
     const { grant_type, code, redirect_uri } = req.body;
 
-    console.log('Parsed parameters:', {
-      grant_type,
-      code,
-      client_id: client_id ? '[PRESENT]' : undefined,
-      client_secret: client_secret ? '[PRESENT]' : undefined,
-      redirect_uri
-    });
-
-    // Check for required parameters
-    if (!grant_type || !client_id || !client_secret) {
-      console.log('Missing required parameters:', {
-        grant_type: !grant_type,
-        client_id: !client_id,
-        client_secret: !client_secret
-      });
-      return res.status(400).json({
-        error: 'invalid_request',
-        error_description: 'Missing required parameters',
-        missing_params: {
-          grant_type: !grant_type,
-          client_id: !client_id,
-          client_secret: !client_secret,
-          code: grant_type === 'authorization_code' && !code,
-          redirect_uri: grant_type === 'authorization_code' && !redirect_uri
-        }
-      });
-    }
-
     // Validate client credentials
     const client = db.clients.get(client_id);
-    console.log('Client validation:', {
-      clientExists: !!client,
-      secretMatches: client?.clientSecret === client_secret,
-      client_id: client_id ? '[PRESENT]' : undefined
-    });
-
     if (!client || client.clientSecret !== client_secret) {
       return res.status(401).json({ 
         error: 'invalid_client',
@@ -184,20 +148,6 @@ app.post('/oauth2/token', (req, res) => {
     if (grant_type === 'authorization_code') {
       // Validate authorization code
       const codeData = db.authorizationCodes.get(code);
-      console.log('Authorization code validation:', {
-        codeExists: !!codeData,
-        clientMatches: codeData?.clientId === client_id,
-        notExpired: codeData && Date.now() <= codeData.expiresAt,
-        providedCode: code,
-        storedCodes: Array.from(db.authorizationCodes.keys()),
-        storedData: codeData ? {
-          clientId: codeData.clientId,
-          scope: codeData.scope,
-          expiresAt: new Date(codeData.expiresAt).toISOString()
-        } : null,
-        currentTime: new Date().toISOString()
-      });
-
       if (!codeData || 
           codeData.clientId !== client_id || 
           Date.now() > codeData.expiresAt) {
@@ -209,55 +159,76 @@ app.post('/oauth2/token', (req, res) => {
 
       // Generate access token
       const accessToken = generateAccessToken(client_id, codeData.scope);
-      console.log('Generated access token');
-
-      // Generate refresh token if offline access was requested
       const refreshToken = generateRefreshToken(client_id, codeData.scope);
-      console.log('Generated refresh token');
 
-      // Store tokens
-      db.accessTokens.set(accessToken, {
+      // Store tokens with expiration
+      db.storeAccessToken(accessToken, {
         clientId: client_id,
         scope: codeData.scope,
-        expiresAt: Date.now() + (config.accessTokenExpiration * 1000)
+        expiresIn: config.accessTokenExpiration
       });
 
-      // Store refresh token
-      db.refreshTokens = db.refreshTokens || new Map();
-      db.refreshTokens.set(refreshToken, {
+      db.storeRefreshToken(refreshToken, {
         clientId: client_id,
         scope: codeData.scope,
-        expiresAt: Date.now() + (30 * 24 * 60 * 60 * 1000) // 30 days
+        expiresIn: 30 * 24 * 60 * 60 // 30 days
       });
 
       // Remove used authorization code
       db.authorizationCodes.delete(code);
 
-      const response = {
+      return res.json({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        token_type: 'Bearer',
+        expires_in: config.accessTokenExpiration,
+        scope: codeData.scope
+      });
+    } else if (grant_type === 'refresh_token') {
+      const refresh_token = req.body.refresh_token;
+      if (!refresh_token) {
+        return res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'Refresh token is required'
+        });
+      }
+
+      // Validate refresh token
+      const refreshTokenData = db.getRefreshToken(refresh_token);
+      if (!refreshTokenData || refreshTokenData.clientId !== client_id) {
+        return res.status(400).json({
+          error: 'invalid_grant',
+          error_description: 'Invalid refresh token'
+        });
+      }
+
+      // Generate new access token
+      const accessToken = generateAccessToken(client_id, refreshTokenData.scope);
+      
+      // Store new access token
+      db.storeAccessToken(accessToken, {
+        clientId: client_id,
+        scope: refreshTokenData.scope,
+        expiresIn: config.accessTokenExpiration
+      });
+
+      return res.json({
         access_token: accessToken,
         token_type: 'Bearer',
         expires_in: config.accessTokenExpiration,
-        scope: codeData.scope,
-        refresh_token: refreshToken
-      };
-      console.log('Sending response:', { 
-        ...response, 
-        access_token: '[REDACTED]',
-        refresh_token: '[REDACTED]'
+        scope: refreshTokenData.scope
       });
-      return res.json(response);
     }
 
     return res.status(400).json({ 
       error: 'unsupported_grant_type',
-      error_description: 'Only authorization_code grant type is supported'
+      error_description: 'Supported grant types: authorization_code, refresh_token'
     });
   } catch (error) {
     console.error('Error in token endpoint:', error);
     res.status(500).json({ 
       error: 'server_error', 
-      error_description: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error_description: error.message
     });
   }
 });
@@ -266,13 +237,10 @@ app.post('/oauth2/token', (req, res) => {
 app.post('/api/specified-archive', async (req, res) => {
   try {
     console.log('SpecifiedArchive endpoint accessed');
-    console.log('Request headers:', req.headers);
-    console.log('Request body:', JSON.stringify(req.body, null, 2));
     
     // Verify Bearer token
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log('Missing or invalid authorization header');
       return res.status(401).json({
         error: 'unauthorized',
         error_description: 'Missing or invalid authorization token'
@@ -280,13 +248,14 @@ app.post('/api/specified-archive', async (req, res) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const tokenData = db.accessTokens.get(token);
+    const tokenData = db.getAccessToken(token);
+    
     console.log('Token validation:', {
       tokenExists: !!tokenData,
-      notExpired: tokenData && Date.now() <= tokenData.expiresAt
+      clientId: tokenData?.clientId
     });
 
-    if (!tokenData || Date.now() > tokenData.expiresAt) {
+    if (!tokenData) {
       return res.status(401).json({
         error: 'unauthorized',
         error_description: 'Token expired or invalid'
@@ -295,13 +264,6 @@ app.post('/api/specified-archive', async (req, res) => {
 
     // Validate request body
     const { files, order, overwrite, parent, metadata } = req.body;
-    console.log('Parsed request body:', {
-      filesCount: files?.length,
-      order,
-      overwrite,
-      parent,
-      hasMetadata: !!metadata
-    });
     
     if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json({
@@ -316,7 +278,6 @@ app.post('/api/specified-archive', async (req, res) => {
     );
 
     if (invalidFiles.length > 0) {
-      console.log('Invalid files found:', invalidFiles.map(f => f.name));
       return res.status(400).json({
         error: 'invalid_request',
         error_description: 'Each file must have name, content, contentType, and path',
@@ -326,8 +287,6 @@ app.post('/api/specified-archive', async (req, res) => {
 
     // Process the archive request
     const archiveId = crypto.randomBytes(16).toString('hex');
-    console.log('Generated archive ID:', archiveId);
-
     const processedFiles = files.map(file => ({
       ...file,
       id: crypto.randomBytes(8).toString('hex'),
@@ -336,7 +295,6 @@ app.post('/api/specified-archive', async (req, res) => {
     }));
 
     // Store the archive data
-    db.archives = db.archives || new Map();
     const archiveData = {
       id: archiveId,
       files: processedFiles,
@@ -349,27 +307,27 @@ app.post('/api/specified-archive', async (req, res) => {
       userId: tokenData.clientId
     };
     db.archives.set(archiveId, archiveData);
-    console.log('Stored archive data with ID:', archiveId);
 
     // Return success response
-    const response = {
+    return res.status(200).json({
       id: archiveId,
-      files: processedFiles,
+      files: processedFiles.map(file => ({
+        id: file.id,
+        name: file.name,
+        status: file.status,
+        timestamp: file.timestamp
+      })),
       status: 'completed',
       metadata: metadata || {},
       timestamp: new Date().toISOString()
-    };
-    console.log('Sending response for archive:', archiveId);
-    return res.status(200).json(response);
+    });
 
   } catch (error) {
     console.error('Error in SpecifiedArchive endpoint:', error);
-    console.error('Stack trace:', error.stack);
     res.status(500).json({
       error: 'server_error',
       error_description: 'An error occurred while processing the archive',
-      message: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      message: error.message
     });
   }
 });

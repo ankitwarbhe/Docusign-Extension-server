@@ -3,6 +3,7 @@
 const db = {
   authorizationCodes: new Map(),
   accessTokens: new Map(),
+  refreshTokens: new Map(),
   clients: new Map([
     ['7b2e685bf08b5cb99c36518619c024c1ed1333e8f4eaae4ef5c5d4e29ca0b70e7dcf21e0fa08a0b29b076e9d5cd420cce6eba1f4f433e906cdc6c743907ef696', {
       clientId: '7b2e685bf08b5cb99c36518619c024c1ed1333e8f4eaae4ef5c5d4e29ca0b70e7dcf21e0fa08a0b29b076e9d5cd420cce6eba1f4f433e906cdc6c743907ef696',
@@ -14,7 +15,49 @@ const db = {
         'https://demo.services.docusign.net/act-gateway/v1.0/oauth/callback'
       ]
     }]
-  ])
+  ]),
+  archives: new Map(),
+
+  // Token management methods
+  storeAccessToken(token, data) {
+    this.accessTokens.set(token, {
+      ...data,
+      created: Date.now()
+    });
+    return true;
+  },
+
+  getAccessToken(token) {
+    const tokenData = this.accessTokens.get(token);
+    if (!tokenData) return null;
+    
+    // Check if token is expired
+    const expiresAt = tokenData.created + (tokenData.expiresIn * 1000);
+    if (Date.now() > expiresAt) {
+      this.accessTokens.delete(token);
+      return null;
+    }
+    
+    return tokenData;
+  },
+
+  storeRefreshToken(token, data) {
+    this.refreshTokens.set(token, {
+      ...data,
+      created: Date.now()
+    });
+    return true;
+  },
+
+  getRefreshToken(token) {
+    return this.refreshTokens.get(token);
+  },
+
+  revokeToken(token) {
+    this.accessTokens.delete(token);
+    this.refreshTokens.delete(token);
+    return true;
+  }
 };
 
 module.exports = db;
